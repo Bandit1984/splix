@@ -1,0 +1,20 @@
+# Reward configuration for Splix AI training
+# Tune these values to shape agent behavior
+
+# Scoring rewards
+score_weight: 0.01            # Reward per point scored
+kill_weight: 1.0              # Reward per opponent killed
+death_penalty: -2.0           # Penalty for dying
+
+# Episode termination penalties
+truncate_penalty: 0.0         # Penalty when episode reaches max_steps
+                              # (typically 0; use -0.1 to discourage long episodes)
+
+# Environment defaults
+arena_width: 80
+arena_height: 80
+opponent_count: 7
+max_steps: 800
+decision_interval_ms: 100
+obs_radius: 6
+game_mode: "default"

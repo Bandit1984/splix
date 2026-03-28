@@ -1,6 +1,6 @@
 import json
 import time
-from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -8,17 +8,39 @@ import numpy as np
 import websocket
 from gymnasium import spaces
 
+from ..config import RewardConfig, ConfigLoader
 
-@dataclass
+
 class SplixEnvConfig:
-    bridge_url: str = "ws://127.0.0.1:8080/ai-bridge"
-    arena_width: int = 80
-    arena_height: int = 80
-    opponent_count: int = 7
-    max_steps: int = 800
-    decision_interval_ms: int = 100
-    obs_radius: int = 6
-    game_mode: str = "default"
+    """Configuration for Splix Gymnasium environment.
+    
+    Can be initialized from a RewardConfig object or defaults.
+    """
+    
+    def __init__(
+        self,
+        bridge_url: str = "ws://127.0.0.1:8080/ai-bridge",
+        reward_config: RewardConfig | None = None,
+    ):
+        self.bridge_url = bridge_url
+        
+        # Load reward config (merge with environment params)
+        if reward_config is None:
+            reward_config = RewardConfig.default()
+        
+        self.arena_width = reward_config.arena_width
+        self.arena_height = reward_config.arena_height
+        self.opponent_count = reward_config.opponent_count
+        self.max_steps = reward_config.max_steps
+        self.decision_interval_ms = reward_config.decision_interval_ms
+        self.obs_radius = reward_config.obs_radius
+        self.game_mode = reward_config.game_mode
+        
+        # Store reward weights for bridge communication
+        self.reward_score_weight = reward_config.score_weight
+        self.reward_kill_weight = reward_config.kill_weight
+        self.reward_death_penalty = reward_config.death_penalty
+        self.reward_truncate_penalty = reward_config.truncate_penalty
 
 
 class SplixEnv(gym.Env[np.ndarray, int]):
@@ -61,6 +83,10 @@ class SplixEnv(gym.Env[np.ndarray, int]):
             "decision_interval_ms": self.config.decision_interval_ms,
             "obs_radius": self.config.obs_radius,
             "game_mode": self.config.game_mode,
+            "reward_score_weight": self.config.reward_score_weight,
+            "reward_kill_weight": self.config.reward_kill_weight,
+            "reward_death_penalty": self.config.reward_death_penalty,
+            "reward_truncate_penalty": self.config.reward_truncate_penalty,
         }
         response = self._rpc("create_env", payload)
         self._env_id = response["env_id"]
