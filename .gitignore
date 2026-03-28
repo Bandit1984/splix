@@ -11,3 +11,5 @@ aitraining/__pycache__/
 aitraining/**/*.pyc
 aitraining/models/
 aitraining/logs/
+aitraining/experiments/__pycache__/
+aitraining/experiments/runs/

@@ -21,8 +21,10 @@ class SplixEnvConfig:
         self,
         bridge_url: str = "ws://127.0.0.1:8080/ai-bridge",
         reward_config: RewardConfig | None = None,
+        global_seed: int | None = None,
     ):
         self.bridge_url = bridge_url
+        self.global_seed = global_seed
         
         # Load reward config (merge with environment params)
         if reward_config is None:
@@ -71,7 +73,7 @@ class SplixEnv(gym.Env[np.ndarray, int]):
     def _connect(self) -> None:
         self._ws = websocket.create_connection(self.config.bridge_url, timeout=15)
         hello = self._rpc("hello", {})
-        if int(hello.get("protocol_version", 0)) != 1:
+        if int(hello.get("protocol_version", 0)) < 1:
             raise RuntimeError("Unsupported bridge protocol version")
 
     def _create_env(self) -> None:
@@ -87,6 +89,7 @@ class SplixEnv(gym.Env[np.ndarray, int]):
             "reward_kill_weight": self.config.reward_kill_weight,
             "reward_death_penalty": self.config.reward_death_penalty,
             "reward_truncate_penalty": self.config.reward_truncate_penalty,
+            "global_seed": self.config.global_seed,
         }
         response = self._rpc("create_env", payload)
         self._env_id = response["env_id"]

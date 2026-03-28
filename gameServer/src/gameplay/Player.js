@@ -219,7 +219,7 @@ export class Player {
 			this.#skinPatternId = options.skin.patternId;
 		}
 		this.#name = options.name;
-		this.#fallbackSkinColorId = Math.floor(lerp(1, FREE_SKIN_COLOR_COUNT + 1, Math.random()));
+		this.#fallbackSkinColorId = Math.floor(lerp(1, FREE_SKIN_COLOR_COUNT + 1, this.game.random()));
 		if (this.#skinColorId == 0) {
 			this.#skinColorId = this.#fallbackSkinColorId;
 		}
@@ -280,6 +280,15 @@ export class Player {
 
 	get connection() {
 		return this.#connection;
+	}
+
+	getDeathState() {
+		if (!this.#lastDeathState) return null;
+		return {
+			dieTime: this.#lastDeathState.dieTime,
+			type: this.#lastDeathState.type,
+			killerName: this.#lastDeathState.killerName,
+		};
 	}
 
 	/**

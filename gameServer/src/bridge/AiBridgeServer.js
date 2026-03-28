@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Vec2 } from "renda";
 import { init as initGameServer } from "../mainInstance.js";
+import { createSeededRandom, normalizeSeed } from "../util/seededRandom.js";
 
 const DIRECTION_BY_ACTION = ["right", "down", "left", "up", "paused"];
 const OPPOSITE_DIRECTIONS = {
@@ -41,9 +42,10 @@ function createHeadlessConnection(onClose) {
 }
 
 class HeuristicBotController {
-	constructor(player, game) {
+	constructor(player, game, randomFn = Math.random) {
 		this.player = player;
 		this.game = game;
+		this.random = randomFn;
 		this.lastDecisionTime = 0;
 	}
 
@@ -82,7 +84,7 @@ class HeuristicBotController {
 		const tileValue = this.game.arena.getTileValue(nextPos);
 		if (tileValue == -1) return -10_000;
 
-		let score = Math.random() * 0.2;
+		let score = this.random() * 0.2;
 		if (tileValue == this.player.id) {
 			score += 0.4;
 		} else if (tileValue == 0) {
@@ -103,6 +105,8 @@ class BridgeSession {
 	constructor(envId, options) {
 		this.envId = envId;
 		this.options = options;
+		this.seed = Number.isInteger(options.seed) ? normalizeSeed(options.seed) : null;
+		this.randomFn = this.seed == null ? Math.random : createSeededRandom(this.seed);
 		this.maxSteps = options.maxSteps;
 		this.decisionIntervalMs = options.decisionIntervalMs;
 		this.obsRadius = options.obsRadius;
@@ -114,6 +118,7 @@ class BridgeSession {
 		this.stepCount = 0;
 		this.lastScore = 0;
 		this.lastKills = 0;
+		this.terminalEventLogged = false;
 		this.closed = false;
 	}
 
@@ -121,12 +126,15 @@ class BridgeSession {
 		this.close();
 		this.closed = false;
 		this.stepCount = 0;
+		this.terminalEventLogged = false;
+		this.randomFn = this.seed == null ? Math.random : createSeededRandom(this.seed);
 		this.main = initGameServer({
 			arenaWidth: this.options.arenaWidth,
 			arenaHeight: this.options.arenaHeight,
 			pitWidth: 16,
 			pitHeight: 16,
 			gameMode: this.options.gameMode,
+			seed: this.seed == null ? undefined : this.seed,
 		});
 
 		this.controlledEntry = this.#createPlayer("agent", false);
@@ -134,7 +142,7 @@ class BridgeSession {
 		for (let i = 0; i < this.options.opponentCount; i++) {
 			this.opponentEntries.push(this.#createPlayer(`opponent-${i + 1}`, true));
 		}
-		this.opponentControllers = this.opponentEntries.map((entry) => new HeuristicBotController(entry.player, this.main.game));
+		this.opponentControllers = this.opponentEntries.map((entry) => new HeuristicBotController(entry.player, this.main.game, this.randomFn));
 		this.opponentInterval = setInterval(() => {
 			const now = this.main?.applicationLoop.now || 0;
 			for (const controller of this.opponentControllers) {
@@ -173,6 +181,7 @@ class BridgeSession {
 			throw new Error("Environment is not initialized. Call reset first.");
 		}
 		const player = this.controlledEntry.player;
+		const deathState = player.getDeathState();
 		const position = player.getPosition();
 		const localTiles = [];
 		for (let y = -this.obsRadius; y <= this.obsRadius; y++) {
@@ -208,9 +217,56 @@ class BridgeSession {
 				kills: player.getTotalKill(),
 				dead: player.dead,
 				permanently_dead: player.permanentlyDead,
+				death_type: deathState?.type || null,
+				death_killer_name: deathState?.killerName || "",
 			},
 			local_tiles: localTiles,
+			seed: this.seed,
 		};
+	}
+
+	#getTerminalEvent(observation, truncated) {
+		const deathType = observation.player.death_type;
+		if (deathType) {
+			const causeBucket = deathType == "arena-bounds"
+				? "wall"
+				: deathType == "self"
+				? "self"
+				: deathType == "player"
+				? "opponent"
+				: "unknown";
+			return {
+				terminal_type: "death",
+				cause_bucket: causeBucket,
+				death_type: deathType,
+				killer_name: observation.player.death_killer_name,
+			};
+		}
+		if (truncated) {
+			return {
+				terminal_type: "truncated",
+				cause_bucket: "truncated",
+				death_type: null,
+				killer_name: "",
+			};
+		}
+		return null;
+	}
+
+	#emitTerminalLog(terminalEvent, observation, reward, info) {
+		if (this.terminalEventLogged || !terminalEvent) return;
+		this.terminalEventLogged = true;
+		console.log(JSON.stringify({
+			type: "ai_bridge_episode_terminal",
+			env_id: this.envId,
+			seed: this.seed,
+			step: this.stepCount,
+			reward,
+			score: observation.player.score,
+			kills: observation.player.kills,
+			...terminalEvent,
+			info,
+		}));
 	}
 
 	async step(action) {
@@ -249,6 +305,12 @@ class BridgeSession {
 		if (truncated && !done) {
 			reward += this.options.rewardWeights.truncate;
 		}
+		const terminalEvent = this.#getTerminalEvent(observation, truncated && !done);
+		this.#emitTerminalLog(terminalEvent, observation, reward, {
+			score_delta: scoreDelta,
+			kills_delta: killsDelta,
+			step_count: this.stepCount,
+		});
 
 		return {
 			observation,
@@ -259,6 +321,7 @@ class BridgeSession {
 				score_delta: scoreDelta,
 				kills_delta: killsDelta,
 				step_count: this.stepCount,
+				terminal_event: terminalEvent,
 			},
 		};
 	}
@@ -333,15 +396,21 @@ export class AiBridgeServer {
 
 			if (method == "hello") {
 				this.#sendSuccess(socket, id, {
-					protocol_version: 1,
+					protocol_version: 2,
 					tick_ms: 50,
 					action_space: 5,
+					capabilities: {
+						step_many: true,
+					},
 				});
 				return;
 			}
 
 			if (method == "create_env") {
 				const envId = String(this.nextEnvId++);
+				const parsedGlobalSeed = payload.global_seed == undefined || payload.global_seed == null
+					? null
+					: normalizeSeed(Number(payload.global_seed));
 				const options = {
 					arenaWidth: payload.arena_width || 80,
 					arenaHeight: payload.arena_height || 80,
@@ -350,6 +419,7 @@ export class AiBridgeServer {
 					maxSteps: payload.max_steps || 800,
 					decisionIntervalMs: payload.decision_interval_ms || 100,
 					obsRadius: payload.obs_radius || 6,
+					seed: parsedGlobalSeed,
 					rewardWeights: {
 						score: payload.reward_score_weight ?? 0.01,
 						kill: payload.reward_kill_weight ?? 1,
@@ -369,10 +439,13 @@ export class AiBridgeServer {
 			if (method == "reset") {
 				const session = this.#getSession(payload.env_id);
 				const observation = session.reset();
+				const resetFingerprint = `${observation.player.x}:${observation.player.y}:${observation.player.direction}`;
 				this.#sendSuccess(socket, id, {
 					observation,
 					info: {
 						env_id: payload.env_id,
+						seed: session.seed,
+						reset_fingerprint: resetFingerprint,
 					},
 				});
 				return;
@@ -390,6 +463,38 @@ export class AiBridgeServer {
 				const session = this.#getSession(payload.env_id);
 				const result = await session.step(payload.action);
 				this.#sendSuccess(socket, id, result);
+				return;
+			}
+
+			if (method == "step_many") {
+				const actions = payload.actions;
+				if (!actions || typeof actions != "object" || Array.isArray(actions)) {
+					this.#sendError(socket, id, "step_many payload must include an actions object mapping env_id to action.");
+					return;
+				}
+
+				const entries = Object.entries(actions);
+				if (entries.length == 0) {
+					this.#sendError(socket, id, "step_many requires at least one env action.");
+					return;
+				}
+
+				const startedAt = performance.now();
+				const results = {};
+				await Promise.all(entries.map(async ([envId, action]) => {
+					const session = this.#getSession(envId);
+					const result = await session.step(action);
+					results[envId] = result;
+				}));
+
+				const elapsedMs = performance.now() - startedAt;
+				this.#sendSuccess(socket, id, {
+					results,
+					metrics: {
+						batch_size: entries.length,
+						elapsed_ms: elapsedMs,
+					},
+				});
 				return;
 			}
 

@@ -29,6 +29,8 @@ export class Arena {
 
 	#pitWidth;
 	#pitHeight;
+	/** @type {number?} */
+	#seed = null;
 
 	get width() {
 		return this.#width;
@@ -46,6 +48,10 @@ export class Arena {
 		return this.#pitHeight;
 	}
 
+	get seed() {
+		return this.#seed;
+	}
+
 	#worker;
 	/** @type {TypedMessenger<WorkerArenaHandlers, import("./arenaWorker/mod.js").ArenaWorkerHandlers>} */
 	#messenger;
@@ -56,13 +62,15 @@ export class Arena {
 	 * @param {number} pitWidth
 	 * @param {number} pitHeight
 	 * @param {import("./Game.js").GameModes} gameMode
+	 * @param {number?} [seed]
 	 */
-	constructor(width, height, pitWidth, pitHeight, gameMode) {
+	constructor(width, height, pitWidth, pitHeight, gameMode, seed = null) {
 		this.#width = width;
 		this.#height = height;
 
 		this.#pitWidth = pitWidth;
 		this.#pitHeight = pitHeight;
+		this.#seed = seed;
 
 		this.#tiles = createArenaTiles(width, height, pitWidth, pitHeight, gameMode);
 

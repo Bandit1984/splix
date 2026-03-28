@@ -1,0 +1,46 @@
+experiment_name: splix-ppo
+seed: 42
+
+env:
+  bridge_url: ws://127.0.0.1:8080/ai-bridge
+  arena_width: 80
+  arena_height: 80
+  opponent_count: 7
+  max_steps: 800
+  decision_interval_ms: 100
+  obs_radius: 6
+  game_mode: default
+
+rewards:
+  score_weight: 0.01
+  kill_weight: 1.0
+  death_penalty: -2.0
+  truncate_penalty: 0.0
+
+training:
+  total_timesteps: 500000
+  n_envs: 4
+  learning_rate: 0.0003
+  n_steps: 1024
+  batch_size: 256
+  gamma: 0.99
+  vector_mode: pooled
+
+evaluation:
+  baselines:
+    - ppo
+    - random
+    - heuristic
+  scenarios:
+    - name: default
+      episodes: 10
+      opponent_count: 7
+      max_steps: 800
+    - name: pressure
+      episodes: 10
+      opponent_count: 10
+      max_steps: 800
+    - name: endurance
+      episodes: 10
+      opponent_count: 7
+      max_steps: 1200

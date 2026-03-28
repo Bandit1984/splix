@@ -34,6 +34,7 @@ class WebSocketPool:
         self.timeout = timeout
         self.ws: websocket.WebSocket | None = None
         self._request_id = 1
+        self.capabilities: dict[str, Any] = {}
         self._connect()
     
     def _connect(self) -> None:
@@ -44,10 +45,11 @@ class WebSocketPool:
         # Verify protocol version
         hello = self._rpc("hello", {})
         protocol_version = int(hello.get("protocol_version", 0))
-        if protocol_version != 1:
+        if protocol_version < 1:
             raise RuntimeError(
                 f"Unsupported bridge protocol version: {protocol_version}"
             )
+        self.capabilities = dict(hello.get("capabilities", {}))
         debug_print(f"Bridge connected (protocol v{protocol_version})")
     
     def _rpc(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -96,6 +98,7 @@ class WebSocketPool:
         reward_kill_weight: float = 1.0,
         reward_death_penalty: float = -2.0,
         reward_truncate_penalty: float = 0.0,
+        global_seed: int | None = None,
     ) -> str:
         """Create a new environment session.
         
@@ -127,6 +130,7 @@ class WebSocketPool:
             "reward_kill_weight": reward_kill_weight,
             "reward_death_penalty": reward_death_penalty,
             "reward_truncate_penalty": reward_truncate_penalty,
+            "global_seed": global_seed,
         }
         response = self._rpc("create_env", payload)
         env_id = response["env_id"]
@@ -165,6 +169,36 @@ class WebSocketPool:
             bool(response.get("truncated", False)),
             response.get("info", {}),
         )
+
+    def step_many(
+        self, actions_by_env_id: dict[str, int]
+    ) -> dict[str, tuple[dict[str, Any], float, bool, bool, dict[str, Any]]]:
+        """Step many environments in a single RPC call.
+
+        Falls back to single-step RPC calls if bridge doesn't support step_many.
+        """
+        if not actions_by_env_id:
+            return {}
+
+        if self.capabilities.get("step_many", False):
+            response = self._rpc("step_many", {"actions": actions_by_env_id})
+            raw_results = response.get("results", {})
+            parsed_results: dict[str, tuple[dict[str, Any], float, bool, bool, dict[str, Any]]] = {}
+            for env_id, result in raw_results.items():
+                parsed_results[str(env_id)] = (
+                    result.get("observation", {}),
+                    float(result.get("reward", 0.0)),
+                    bool(result.get("done", False)),
+                    bool(result.get("truncated", False)),
+                    result.get("info", {}),
+                )
+            return parsed_results
+
+        # Backward-compatible fallback.
+        return {
+            str(env_id): self.step(str(env_id), action)
+            for env_id, action in actions_by_env_id.items()
+        }
     
     def close_env(self, env_id: str) -> None:
         """Close an environment session.

@@ -12,6 +12,7 @@ import {
 	REQUIRED_PLAYER_COUNT_FOR_GLOBAL_LEADERBOARD,
 } from "../config.js";
 import { ApplicationLoop } from "../ApplicationLoop.js";
+import { createSeededRandom, normalizeSeed } from "../util/seededRandom.js";
 
 /**
  * @typedef TileTypeForMessage
@@ -43,6 +44,10 @@ export class Game {
 	#lastLeaderboardSendTime = 0;
 	/** @type {ArrayBuffer?} */
 	#lastLeaderboardMessage = null;
+	/** @type {() => number} */
+	#randomFn;
+	/** @type {number?} */
+	#seed = null;
 
 	get lastLeaderboardMessage() {
 		return this.#lastLeaderboardMessage;
@@ -57,6 +62,7 @@ export class Game {
 	 * @param {number} [options.pitWidth]
 	 * @param {number} [options.pitHeight]
 	 * @param {GameModes} [options.gameMode]
+	 * @param {number} [options.seed]
 	 */
 	constructor(applicationLoop, mainInstance, {
 		arenaWidth = 600,
@@ -64,10 +70,18 @@ export class Game {
 		pitWidth = 16,
 		pitHeight = 16,
 		gameMode = "default",
+		seed,
 	} = {}) {
 		this.#mainInstance = mainInstance;
 		this.#gameMode = gameMode;
-		this.#arena = new Arena(arenaWidth, arenaHeight, pitWidth, pitHeight, gameMode);
+		if (seed == undefined || seed == null) {
+			this.#randomFn = Math.random;
+		} else {
+			const normalizedSeed = normalizeSeed(seed);
+			this.#seed = normalizedSeed;
+			this.#randomFn = createSeededRandom(normalizedSeed);
+		}
+		this.#arena = new Arena(arenaWidth, arenaHeight, pitWidth, pitHeight, gameMode, this.#seed);
 		this.#arena.onRectFilled((rect, tileValue) => {
 			for (const player of this.getOverlappingViewportPlayersForRect(rect)) {
 				const { colorId, patternId } = this.getTileTypeForMessage(player, tileValue);
@@ -84,6 +98,14 @@ export class Game {
 				player.sendPlayerStateToPlayer(player);
 			}
 		});
+	}
+
+	get seed() {
+		return this.#seed;
+	}
+
+	random() {
+		return this.#randomFn();
 	}
 
 	/**
@@ -155,10 +177,10 @@ export class Game {
 	getNewSpawnPosition() {
 		const position = (() => {
 			let tempX = Math.floor(
-				lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.width - PLAYER_SPAWN_RADIUS - 1, Math.random()),
+				lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.width - PLAYER_SPAWN_RADIUS - 1, this.random()),
 			);
 			let tempY = Math.floor(
-				lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.height - PLAYER_SPAWN_RADIUS - 1, Math.random()),
+				lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.height - PLAYER_SPAWN_RADIUS - 1, this.random()),
 			);
 
 			// We should prevent players from spawning directly inside of the pit or on the border of it.
@@ -173,7 +195,7 @@ export class Game {
 					tempY <= this.arena.height / 2 + this.arena.pitHeight / 2 + 1
 				) {
 					tempY = Math.floor(
-						lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.height - PLAYER_SPAWN_RADIUS - 1, Math.random()),
+						lerp(PLAYER_SPAWN_RADIUS + 1, this.arena.height - PLAYER_SPAWN_RADIUS - 1, this.random()),
 					);
 				}
 			}
