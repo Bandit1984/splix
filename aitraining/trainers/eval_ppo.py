@@ -7,6 +7,7 @@ from typing import Any
 from stable_baselines3 import PPO
 
 from aitraining.config import ConfigLoader
+from aitraining.envs import run_env_preflight
 from aitraining.envs.splix_env import SplixEnv, SplixEnvConfig, wait_for_bridge
 from aitraining.experiments import ExperimentConfig, ExperimentRunner
 from aitraining.utils import info_print, log_config, Timer
@@ -106,6 +107,7 @@ def main() -> None:
     parser.add_argument("--model-path", default="aitraining/models/ppo_splix_latest.zip")
     parser.add_argument("--episodes", type=int, default=None,
                         help="Optional override for episodes per scenario")
+    parser.add_argument("--preflight-check", action="store_true")
     args = parser.parse_args()
 
     exp_cfg = ExperimentConfig.from_yaml(args.experiment_config)
@@ -138,6 +140,15 @@ def main() -> None:
     git_meta = runner.get_git_metadata()
     run_dir = runner.create_run_directory(f"{exp_cfg.experiment_name}-eval", git_meta)
     runner.write_manifest(run_dir, exp_cfg, git_meta)
+
+    if args.preflight_check or exp_cfg.training.preflight_check:
+        report = run_env_preflight(SplixEnvConfig(
+            bridge_url=bridge_url,
+            reward_config=reward_config,
+            global_seed=exp_cfg.seed,
+        ))
+        runner.write_metrics(run_dir, report, file_name="preflight_report.json")
+        info_print("Gymnasium preflight check passed")
 
     log_config(reward_config.to_dict(), "Reward Configuration")
 

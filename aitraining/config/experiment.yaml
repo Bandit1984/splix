@@ -25,6 +25,10 @@ training:
   batch_size: 256
   gamma: 0.99
   vector_mode: pooled
+  preflight_check: true
+  use_wandb: false
+  checkpoint_freq: 10000
+  eval_freq: 10000
 
 evaluation:
   baselines:

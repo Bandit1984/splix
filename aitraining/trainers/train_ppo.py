@@ -6,13 +6,21 @@ import numpy as np
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecMonitor
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, CallbackList
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecMonitor
 
 from aitraining.config import ConfigLoader
-from aitraining.envs import PooledSplixVecEnv
-from aitraining.envs.splix_env import SplixEnv, SplixEnvConfig, wait_for_bridge
+from aitraining.envs import PooledSplixVecEnv, run_env_preflight
+from aitraining.envs.splix_env import SplixEnvConfig, make_recorded_env, wait_for_bridge
 from aitraining.experiments import ExperimentConfig, ExperimentRunner
 from aitraining.utils import info_print, log_config
+
+try:
+    import wandb
+    from wandb.integration.sb3 import WandbCallback
+except Exception:
+    wandb = None
+    WandbCallback = None
 
 
 def main() -> None:
@@ -30,7 +38,9 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--gamma", type=float, default=None)
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--vector-mode", choices=["pooled", "classic"], default=None)
+    parser.add_argument("--vector-mode", choices=["pooled", "classic", "subproc"], default=None)
+    parser.add_argument("--preflight-check", action="store_true")
+    parser.add_argument("--use-wandb", action="store_true")
     parser.add_argument("--model-dir", default=None)
     parser.add_argument("--log-dir", default=None)
     args = parser.parse_args()
@@ -54,6 +64,10 @@ def main() -> None:
         exp_cfg.seed = args.seed
     if args.vector_mode is not None:
         exp_cfg.training.vector_mode = args.vector_mode
+    if args.preflight_check:
+        exp_cfg.training.preflight_check = True
+    if args.use_wandb:
+        exp_cfg.training.use_wandb = True
 
     bridge_url = exp_cfg.env.bridge_url
     total_timesteps = exp_cfg.training.total_timesteps
@@ -98,13 +112,22 @@ def main() -> None:
     tensorboard_path = Path(log_dir)
     tensorboard_path.mkdir(parents=True, exist_ok=True)
 
-    def env_factory() -> SplixEnv:
+    def env_factory():
         config = SplixEnvConfig(
             bridge_url=bridge_url,
             reward_config=reward_config,
             global_seed=exp_cfg.seed,
         )
-        return SplixEnv(config)
+        return make_recorded_env(config)
+
+    if exp_cfg.training.preflight_check:
+        report = run_env_preflight(SplixEnvConfig(
+            bridge_url=bridge_url,
+            reward_config=reward_config,
+            global_seed=exp_cfg.seed,
+        ))
+        runner.write_metrics(run_dir, report, file_name="preflight_report.json")
+        info_print("Gymnasium preflight check passed")
 
     info_print(f"Creating {n_envs} training environments (mode={exp_cfg.training.vector_mode})...")
     if exp_cfg.training.vector_mode == "pooled":
@@ -116,9 +139,14 @@ def main() -> None:
                 global_seed=exp_cfg.seed,
             ),
         )
+        env = VecMonitor(env)
+    elif exp_cfg.training.vector_mode == "subproc":
+        env = make_vec_env(env_factory, n_envs=n_envs, vec_env_cls=SubprocVecEnv)
     else:
         env = make_vec_env(env_factory, n_envs=n_envs)
-    env = VecMonitor(env)
+
+    eval_env = DummyVecEnv([env_factory])
+    eval_env = VecMonitor(eval_env)
 
     info_print(f"Starting training for {total_timesteps} timesteps...")
     model = PPO(
@@ -133,7 +161,27 @@ def main() -> None:
         tensorboard_log=str(tensorboard_path),
     )
 
-    model.learn(total_timesteps=total_timesteps)
+    callbacks = [
+        CheckpointCallback(
+            save_freq=max(1, int(exp_cfg.training.checkpoint_freq // max(1, n_envs))),
+            save_path=str(model_path),
+            name_prefix="ppo_checkpoint",
+        ),
+        EvalCallback(
+            eval_env,
+            best_model_save_path=str(model_path),
+            log_path=str(tensorboard_path),
+            eval_freq=max(1, int(exp_cfg.training.eval_freq // max(1, n_envs))),
+            deterministic=True,
+            render=False,
+        ),
+    ]
+
+    if exp_cfg.training.use_wandb and wandb is not None and WandbCallback is not None:
+        wandb.init(project="splix-ai", name=run_dir.name, config=exp_cfg.to_dict(), sync_tensorboard=True)
+        callbacks.append(WandbCallback(model_save_path=str(model_path), verbose=2))
+
+    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
     model.save(model_path / "ppo_splix_latest")
     runner.write_metrics(
         run_dir,
@@ -148,7 +196,10 @@ def main() -> None:
     )
     info_print(f"Model saved to {model_path / 'ppo_splix_latest.zip'}")
     info_print(f"Run artifacts written to {run_dir}")
+    eval_env.close()
     env.close()
+    if exp_cfg.training.use_wandb and wandb is not None:
+        wandb.finish()
 
 
 if __name__ == "__main__":

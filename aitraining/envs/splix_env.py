@@ -7,6 +7,8 @@ import gymnasium as gym
 import numpy as np
 import websocket
 from gymnasium import spaces
+from gymnasium.wrappers import RecordEpisodeStatistics
+from stable_baselines3.common.monitor import Monitor
 
 from ..config import RewardConfig, ConfigLoader
 
@@ -56,9 +58,19 @@ class SplixEnv(gym.Env[np.ndarray, int]):
         self._scalar_size = 8
 
         self.action_space = spaces.Discrete(5)
+        scalar_low = np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        scalar_high = np.asarray([1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+        obs_low = np.concatenate([
+            np.full(self._obs_tile_size, -1.0, dtype=np.float32),
+            scalar_low,
+        ])
+        obs_high = np.concatenate([
+            np.full(self._obs_tile_size, 2.0, dtype=np.float32),
+            scalar_high,
+        ])
         self.observation_space = spaces.Box(
-            low=-1.0,
-            high=2.0,
+            low=obs_low,
+            high=obs_high,
             shape=(self._obs_tile_size + self._scalar_size,),
             dtype=np.float32,
         )
@@ -133,11 +145,11 @@ class SplixEnv(gym.Env[np.ndarray, int]):
                 float(player["x"]) / max(1.0, float(arena["width"])),
                 float(player["y"]) / max(1.0, float(arena["height"])),
                 direction_map.get(player["direction"], 4.0),
-                float(player["score"]),
-                float(player["kills"]),
+                float(player["score"]) / max(1.0, float(arena["width"] * arena["height"])),
+                float(player["kills"]) / max(1.0, float(self.config.opponent_count + 1)),
                 1.0 if player["dead"] else 0.0,
                 1.0 if player["permanently_dead"] else 0.0,
-                float(obs.get("step", 0)),
+                float(obs.get("step", 0)) / max(1.0, float(self.config.max_steps)),
             ],
             dtype=np.float32,
         )
@@ -148,6 +160,8 @@ class SplixEnv(gym.Env[np.ndarray, int]):
         if self._env_id is None:
             raise RuntimeError("Missing env_id")
         payload: dict[str, Any] = {"env_id": self._env_id}
+        if seed is not None:
+            payload["global_seed"] = int(seed)
         if options:
             payload.update(options)
         response = self._rpc("reset", payload)
@@ -198,3 +212,17 @@ def wait_for_bridge(url: str, timeout_seconds: int = 30) -> None:
         except Exception:
             time.sleep(0.5)
     raise RuntimeError(f"Bridge is not reachable at {url}")
+
+
+def make_recorded_env(config: SplixEnvConfig) -> gym.Env[np.ndarray, int]:
+    """Create an env wrapped with RecordEpisodeStatistics for automatic episode metrics."""
+    env: gym.Env[np.ndarray, int] = SplixEnv(config)
+    env = RecordEpisodeStatistics(env)
+    return env
+
+
+def make_monitored_env(config: SplixEnvConfig) -> gym.Env[np.ndarray, int]:
+    """Create a high-level wrapped env with RecordEpisodeStatistics and Monitor."""
+    env = make_recorded_env(config)
+    env = Monitor(env)
+    return env

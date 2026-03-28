@@ -11,7 +11,9 @@
 		"train-ai": "deno run -A scripts/trainSelfPlay.js",
 		"python-setup": "bash aitraining/scripts/setup_venv.sh",
 		"python-train": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.train_ppo",
+		"python-train-subproc": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.train_ppo --vector-mode subproc",
 		"python-eval": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.eval_ppo",
+		"python-preflight": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.preflight",
 		"fmt": "deno fmt"
 	},
 	"importMap": "importmap.json",

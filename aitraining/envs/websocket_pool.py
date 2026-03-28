@@ -23,7 +23,7 @@ class WebSocketPool:
         # Now use env_id_1 and env_id_2 with step() etc
     """
     
-    def __init__(self, bridge_url: str, timeout: float = 15.0):
+    def __init__(self, bridge_url: str, timeout: float = 60.0):
         """Initialize pool with a bridge URL.
         
         Args:
@@ -52,7 +52,12 @@ class WebSocketPool:
         self.capabilities = dict(hello.get("capabilities", {}))
         debug_print(f"Bridge connected (protocol v{protocol_version})")
     
-    def _rpc(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _rpc(
+        self,
+        method: str,
+        payload: dict[str, Any],
+        timeout_override: float | None = None,
+    ) -> dict[str, Any]:
         """Send RPC request and wait for response.
         
         Args:
@@ -74,16 +79,25 @@ class WebSocketPool:
             "payload": payload,
         }
         self.ws.send(json.dumps(message))
+
+        previous_timeout: float | None = None
+        if timeout_override is not None:
+            previous_timeout = self.ws.gettimeout()
+            self.ws.settimeout(timeout_override)
         
-        # Wait for matching response
-        while True:
-            raw = self.ws.recv()
-            data = json.loads(raw)
-            if data.get("id") != request_id:
-                continue
-            if not data.get("ok", False):
-                raise RuntimeError(data.get("error", "Unknown bridge error"))
-            return data.get("payload", {})
+        try:
+            # Wait for matching response
+            while True:
+                raw = self.ws.recv()
+                data = json.loads(raw)
+                if data.get("id") != request_id:
+                    continue
+                if not data.get("ok", False):
+                    raise RuntimeError(data.get("error", "Unknown bridge error"))
+                return data.get("payload", {})
+        finally:
+            if timeout_override is not None and previous_timeout is not None:
+                self.ws.settimeout(previous_timeout)
     
     def create_env(
         self,
@@ -207,7 +221,7 @@ class WebSocketPool:
             env_id: Environment ID
         """
         try:
-            self._rpc("close_env", {"env_id": env_id})
+            self._rpc("close_env", {"env_id": env_id}, timeout_override=2.0)
             debug_print(f"Closed env {env_id}")
         except Exception as e:
             debug_print(f"Error closing env {env_id}: {e}")

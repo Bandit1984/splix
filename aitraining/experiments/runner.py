@@ -39,6 +39,10 @@ class ExperimentTrainingConfig:
     batch_size: int = 256
     gamma: float = 0.99
     vector_mode: str = "pooled"
+    preflight_check: bool = True
+    use_wandb: bool = False
+    checkpoint_freq: int = 10_000
+    eval_freq: int = 10_000
 
 
 @dataclass
