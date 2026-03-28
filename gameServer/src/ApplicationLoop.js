@@ -15,6 +15,8 @@ const MAX_LOOP_DURATION_MS = 3 / PLAYER_TRAVEL_SPEED;
 export class ApplicationLoop {
 	#mainInstance;
 	#prevNow = 0;
+	/** @type {number?} */
+	#intervalId = null;
 	/** @type {Set<() => void>} */
 	#onSlowTickEndedCbs = new Set();
 
@@ -24,7 +26,7 @@ export class ApplicationLoop {
 	constructor(mainInstance) {
 		this.#mainInstance = mainInstance;
 		this.now = 0;
-		setInterval(this.loop.bind(this), APPLICATION_LOOP_INTERVAL);
+		this.#intervalId = setInterval(this.loop.bind(this), APPLICATION_LOOP_INTERVAL);
 	}
 
 	loop() {
@@ -63,5 +65,12 @@ export class ApplicationLoop {
 	 */
 	onSlowTickEnded(cb) {
 		this.#onSlowTickEndedCbs.add(cb);
+	}
+
+	stop() {
+		if (this.#intervalId != null) {
+			clearInterval(this.#intervalId);
+			this.#intervalId = null;
+		}
 	}
 }

@@ -196,4 +196,8 @@ export class Arena {
 	getMinimapPart(part) {
 		return this.#messenger.send.getMinimapPart(part);
 	}
+
+	stop() {
+		this.#worker.terminate();
+	}
 }

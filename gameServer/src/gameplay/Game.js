@@ -106,6 +106,14 @@ export class Game {
 		}
 	}
 
+	stop() {
+		for (const player of this.#players.values()) {
+			player.connection.close();
+		}
+		this.#players.clear();
+		this.#arena.stop();
+	}
+
 	#lastPlayerId = 0;
 	#getNewPlayerId() {
 		while (true) {

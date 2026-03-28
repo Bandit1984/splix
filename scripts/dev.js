@@ -8,6 +8,7 @@ import { serveDir } from "$std/http/file_server.ts";
 import { resolve } from "$std/path/mod.ts";
 import { setCwd } from "chdir-anywhere";
 import { init as initGameServer } from "../gameServer/src/mainInstance.js";
+import { AiBridgeServer } from "../gameServer/src/bridge/AiBridgeServer.js";
 import { init as initServerManager } from "../serverManager/src/mainInstance.js";
 import "$std/dotenv/load.ts";
 import { INSECURE_LOCALHOST_SERVERMANAGER_TOKEN } from "../shared/config.js";
@@ -79,6 +80,7 @@ if (!Deno.args.includes("--no-init")) {
 	});
 	// @ts-ignore
 	globalThis.gameServer = gameServer;
+	const aiBridgeServer = new AiBridgeServer();
 
 	const persistentStoragePath = resolve("serverManager/persistentStorage.json");
 	const serverManager = initServerManager({
@@ -118,6 +120,7 @@ if (!Deno.args.includes("--no-init")) {
 								<li><a href="/client/flags.html">/client/flags.html</a> - Client flags for debugging etc.</li>
 								<li>/gameserver - The gameserver, <a href="/client/#ip=ws://localhost:8080/gameserver">click here to connect to it using a client</a></li>
 								<li><a href="/adminpanel/">/adminpanel/</a> - Admin panel for server management.</li>
+								<li>/ai-bridge - Websocket endpoint for Python Gym/PPO training bridge.</li>
 								<li>/servermanager/ - Hosts several endpoints for servermanagement.</li>
 								<li><a href="/servermanager/gameservers">/servermanager/gameservers</a> - Endpoint which can be used by clients to list available servers.</li>
 							</ul>
@@ -133,6 +136,8 @@ if (!Deno.args.includes("--no-init")) {
 			);
 		} else if (url.pathname == "/gameserver") {
 			return gameServer.websocketManager.handleRequest(request, info);
+		} else if (url.pathname == "/ai-bridge") {
+			return aiBridgeServer.handleRequest(request);
 		} else if (url.pathname.startsWith("/servermanagerToken")) {
 			return new Response(INSECURE_LOCALHOST_SERVERMANAGER_TOKEN);
 		} else if (url.pathname.startsWith("/servermanager")) {

@@ -15,5 +15,9 @@
 		"serverManager/**/*.js",
 		"adminPanel/src/**/*.js",
 		"shared/**/*.js"
+	],
+	"exclude": [
+		"gameServer/src/bridge/**/*.js",
+		"scripts/trainSelfPlay.js"
 	]
 }

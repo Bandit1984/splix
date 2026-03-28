@@ -8,6 +8,10 @@
 		"build-client": "deno run -A scripts/buildClient.js",
 		"build-servermanager": "deno run -A scripts/buildServerManager.js",
 		"build-adminpanel": "deno run -A scripts/buildAdminPanel.js",
+		"train-ai": "deno run -A scripts/trainSelfPlay.js",
+		"python-setup": "bash aitraining/scripts/setup_venv.sh",
+		"python-train": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.train_ppo",
+		"python-eval": "PYTHONPATH=. aitraining/.venv/bin/python -m aitraining.trainers.eval_ppo",
 		"fmt": "deno fmt"
 	},
 	"importMap": "importmap.json",

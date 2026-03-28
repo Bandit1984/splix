@@ -52,4 +52,9 @@ export class Main {
 	init({ port, hostname }) {
 		this.websocketManager.startServer(port, hostname);
 	}
+
+	stop() {
+		this.game.stop();
+		this.applicationLoop.stop();
+	}
 }
