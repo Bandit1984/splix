@@ -40,6 +40,7 @@ class ExperimentTrainingConfig:
     gamma: float = 0.99
     vector_mode: str = "pooled"
     preflight_check: bool = True
+    strict_observation_contract: bool = True
     use_wandb: bool = False
     checkpoint_freq: int = 10_000
     eval_freq: int = 10_000

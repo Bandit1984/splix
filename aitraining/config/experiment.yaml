@@ -26,6 +26,7 @@ training:
   gamma: 0.99
   vector_mode: pooled
   preflight_check: true
+  strict_observation_contract: true
   use_wandb: false
   checkpoint_freq: 10000
   eval_freq: 10000

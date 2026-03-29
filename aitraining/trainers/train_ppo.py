@@ -117,6 +117,7 @@ def main() -> None:
             bridge_url=bridge_url,
             reward_config=reward_config,
             global_seed=exp_cfg.seed,
+            strict_observation_contract=exp_cfg.training.strict_observation_contract,
         )
         return make_recorded_env(config)
 
@@ -125,6 +126,7 @@ def main() -> None:
             bridge_url=bridge_url,
             reward_config=reward_config,
             global_seed=exp_cfg.seed,
+            strict_observation_contract=exp_cfg.training.strict_observation_contract,
         ))
         runner.write_metrics(run_dir, report, file_name="preflight_report.json")
         info_print("Gymnasium preflight check passed")
@@ -137,6 +139,7 @@ def main() -> None:
                 bridge_url=bridge_url,
                 reward_config=reward_config,
                 global_seed=exp_cfg.seed,
+                strict_observation_contract=exp_cfg.training.strict_observation_contract,
             ),
         )
         env = VecMonitor(env)

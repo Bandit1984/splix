@@ -11,6 +11,11 @@ from gymnasium.wrappers import RecordEpisodeStatistics
 from stable_baselines3.common.monitor import Monitor
 
 from ..config import RewardConfig, ConfigLoader
+from .observation_contract import (
+    flatten_observation,
+    observation_bounds,
+    validate_observation_bounds,
+)
 
 
 class SplixEnvConfig:
@@ -24,9 +29,11 @@ class SplixEnvConfig:
         bridge_url: str = "ws://127.0.0.1:8080/ai-bridge",
         reward_config: RewardConfig | None = None,
         global_seed: int | None = None,
+        strict_observation_contract: bool = False,
     ):
         self.bridge_url = bridge_url
         self.global_seed = global_seed
+        self.strict_observation_contract = strict_observation_contract
         
         # Load reward config (merge with environment params)
         if reward_config is None:
@@ -56,24 +63,19 @@ class SplixEnv(gym.Env[np.ndarray, int]):
         self._obs_radius = self.config.obs_radius
         self._obs_tile_size = (self._obs_radius * 2 + 1) ** 2
         self._scalar_size = 8
+        self._obs_low: np.ndarray | None = None
+        self._obs_high: np.ndarray | None = None
 
         self.action_space = spaces.Discrete(5)
-        scalar_low = np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-        scalar_high = np.asarray([1.0, 1.0, 4.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
-        obs_low = np.concatenate([
-            np.full(self._obs_tile_size, -1.0, dtype=np.float32),
-            scalar_low,
-        ])
-        obs_high = np.concatenate([
-            np.full(self._obs_tile_size, 2.0, dtype=np.float32),
-            scalar_high,
-        ])
+        obs_low, obs_high = observation_bounds(self._obs_tile_size)
         self.observation_space = spaces.Box(
             low=obs_low,
             high=obs_high,
             shape=(self._obs_tile_size + self._scalar_size,),
             dtype=np.float32,
         )
+        self._obs_low = obs_low
+        self._obs_high = obs_high
 
         self._ws: websocket.WebSocket | None = None
         self._request_id = 1
@@ -129,31 +131,18 @@ class SplixEnv(gym.Env[np.ndarray, int]):
             return data.get("payload", {})
 
     def _flatten_observation(self, obs: dict[str, Any]) -> np.ndarray:
-        local_tiles = np.asarray(obs["local_tiles"], dtype=np.float32)
-        player = obs["player"]
-        arena = obs["arena"]
-
-        direction_map = {
-            "right": 0.0,
-            "down": 1.0,
-            "left": 2.0,
-            "up": 3.0,
-            "paused": 4.0,
-        }
-        scalars = np.asarray(
-            [
-                float(player["x"]) / max(1.0, float(arena["width"])),
-                float(player["y"]) / max(1.0, float(arena["height"])),
-                direction_map.get(player["direction"], 4.0),
-                float(player["score"]) / max(1.0, float(arena["width"] * arena["height"])),
-                float(player["kills"]) / max(1.0, float(self.config.opponent_count + 1)),
-                1.0 if player["dead"] else 0.0,
-                1.0 if player["permanently_dead"] else 0.0,
-                float(obs.get("step", 0)) / max(1.0, float(self.config.max_steps)),
-            ],
-            dtype=np.float32,
+        flattened = flatten_observation(
+            obs,
+            opponent_count=self.config.opponent_count,
+            max_steps=self.config.max_steps,
         )
-        return np.concatenate([local_tiles, scalars], dtype=np.float32)
+        if self.config.strict_observation_contract:
+            validate_observation_bounds(
+                flattened,
+                self._obs_low if self._obs_low is not None else self.observation_space.low,
+                self._obs_high if self._obs_high is not None else self.observation_space.high,
+            )
+        return flattened
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
         super().reset(seed=seed)

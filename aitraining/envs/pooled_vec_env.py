@@ -5,6 +5,11 @@ from typing import Any
 import numpy as np
 from stable_baselines3.common.vec_env import VecEnv
 
+from .observation_contract import (
+    flatten_observation,
+    observation_bounds,
+    validate_observation_bounds,
+)
 from .splix_env import SplixEnvConfig
 from .websocket_pool import WebSocketPool
 
@@ -19,6 +24,8 @@ class PooledSplixVecEnv(VecEnv):
         self._last_actions: np.ndarray | None = None
         self._obs_tile_size = (config.obs_radius * 2 + 1) ** 2
         self._scalar_size = 8
+        self._obs_low: np.ndarray | None = None
+        self._obs_high: np.ndarray | None = None
 
         for _ in range(n_envs):
             env_index = len(self.env_ids)
@@ -52,9 +59,10 @@ class PooledSplixVecEnv(VecEnv):
     def _build_observation_space(self):
         from gymnasium import spaces
 
+        obs_low, obs_high = observation_bounds(self._obs_tile_size)
         return spaces.Box(
-            low=-1.0,
-            high=2.0,
+            low=obs_low,
+            high=obs_high,
             shape=(self._obs_tile_size + self._scalar_size,),
             dtype=np.float32,
         )
@@ -65,30 +73,17 @@ class PooledSplixVecEnv(VecEnv):
         return spaces.Discrete(5)
 
     def _flatten_observation(self, obs: dict[str, Any]) -> np.ndarray:
-        local_tiles = np.asarray(obs["local_tiles"], dtype=np.float32)
-        player = obs["player"]
-        arena = obs["arena"]
-        direction_map = {
-            "right": 0.0,
-            "down": 1.0,
-            "left": 2.0,
-            "up": 3.0,
-            "paused": 4.0,
-        }
-        scalars = np.asarray(
-            [
-                float(player["x"]) / max(1.0, float(arena["width"])),
-                float(player["y"]) / max(1.0, float(arena["height"])),
-                direction_map.get(player["direction"], 4.0),
-                float(player["score"]),
-                float(player["kills"]),
-                1.0 if player["dead"] else 0.0,
-                1.0 if player["permanently_dead"] else 0.0,
-                float(obs.get("step", 0)),
-            ],
-            dtype=np.float32,
+        flattened = flatten_observation(
+            obs,
+            opponent_count=self.config.opponent_count,
+            max_steps=self.config.max_steps,
         )
-        return np.concatenate([local_tiles, scalars], dtype=np.float32)
+        if self.config.strict_observation_contract:
+            if self._obs_low is None or self._obs_high is None:
+                self._obs_low = self.observation_space.low
+                self._obs_high = self.observation_space.high
+            validate_observation_bounds(flattened, self._obs_low, self._obs_high)
+        return flattened
 
     def reset(self) -> np.ndarray:
         observations = []
