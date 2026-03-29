@@ -17,6 +17,7 @@
 		"fmt": "deno fmt"
 	},
 	"importMap": "importmap.json",
+	"nodeModulesDir": "auto",
 	"lock": false,
 	"fmt": {
 		"exclude": [

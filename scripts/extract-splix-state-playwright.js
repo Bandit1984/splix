@@ -13,7 +13,8 @@
  *   MAX_EVENTS=200
  */
 
-const { chromium } = require("playwright");
+const playwrightModuleName = ["play", "wright"].join("");
+const { chromium } = require(playwrightModuleName);
 
 const SPLIX_URL = process.env.SPLIX_URL || "https://splix.io/";
 const HEADLESS = String(process.env.HEADLESS || "false").toLowerCase() === "true";
@@ -320,9 +321,38 @@ async function main() {
   console.log(`Opened ${SPLIX_URL}`);
   if (AUTO_JOIN) {
     try {
-      await page.waitForSelector("#nameInput", { timeout: 10_000 });
+      await page.waitForSelector("#nameInput", { timeout: 15_000 });
+      await page.waitForSelector("#serverSelect", { timeout: 15_000 });
+      await page.waitForSelector("#joinButton", { timeout: 15_000 });
+
+      // Wait until server list initialization is complete and join controls are enabled.
+      await page.waitForFunction(() => {
+        const serverSelect = /** @type {HTMLSelectElement?} */ (document.querySelector("#serverSelect"));
+        const joinButton = /** @type {HTMLInputElement?} */ (document.querySelector("#joinButton"));
+        if (!serverSelect || !joinButton) return false;
+        if (serverSelect.disabled || joinButton.disabled) return false;
+        return serverSelect.options.length > 0;
+      }, { timeout: 20_000 });
+
       await page.fill("#nameInput", AUTO_NAME);
-      await page.click("#joinButton");
+
+      await page.evaluate(() => {
+        const serverSelect = /** @type {HTMLSelectElement?} */ (document.querySelector("#serverSelect"));
+        if (!serverSelect) return;
+        const validOption = Array.from(serverSelect.options).find((opt) => Boolean(opt.value));
+        if (validOption) {
+          serverSelect.value = validOption.value;
+          serverSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+
+      // Submit via form as a robust fallback for overlay/layout differences.
+      await page.evaluate(() => {
+        const form = /** @type {HTMLFormElement?} */ (document.querySelector("#nameForm"));
+        if (form) {
+          form.requestSubmit();
+        }
+      });
       console.log(`Auto-join attempted with name: ${AUTO_NAME}`);
     } catch (err) {
       console.warn("Auto-join failed. You can join manually in headed mode.", err?.message || err);

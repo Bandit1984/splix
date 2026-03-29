@@ -40,6 +40,7 @@ def main() -> None:
             bridge_url=exp_cfg.env.bridge_url,
             reward_config=reward_config,
             global_seed=exp_cfg.seed,
+            strict_observation_contract=exp_cfg.training.strict_observation_contract,
         )
     )
 

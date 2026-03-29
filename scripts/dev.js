@@ -49,6 +49,7 @@ generateTypes({
 	],
 	importMap: "importmap.json",
 	excludeUrls: [
+		"file:///home/batman/Documents/Semesters/Semester%202/CS%20Club/Splix%20IA/splix/scripts/extract-splix-state-playwright.js",
 		"https://raw.githubusercontent.com/rendajs/Renda/5722ef6433ed217715bb4ef0ab2bbd6a96b3992d/studio/src/styles/projectSelectorStyles.js",
 		"https://raw.githubusercontent.com/rendajs/Renda/5722ef6433ed217715bb4ef0ab2bbd6a96b3992d/studio/src/styles/studioStyles.js",
 		"https://raw.githubusercontent.com/rendajs/Renda/5722ef6433ed217715bb4ef0ab2bbd6a96b3992d/studio/src/styles/shadowStyles.js",
